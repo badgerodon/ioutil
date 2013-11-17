@@ -1,25 +1,31 @@
 package ioutil
 
 import (
-	"errors"
+	"fmt"
 	"io"
 )
 
 type (
-	sectionReader struct {
+	SectionReader struct {
 		src              io.ReadSeeker
 		base, off, limit int64
 	}
 )
 
-var errWhence = errors.New("Seek: invalid whence")
-var errOffset = errors.New("Seek: invalid offset")
+var errWhence = fmt.Errorf("Seek: invalid whence")
+var errOffset = fmt.Errorf("Seek: invalid offset")
 
-func NewSectionReader(src io.ReadSeeker, offset, length int64) io.ReadSeeker {
-	return &sectionReader{src, offset, offset, offset + length}
+func NewSectionReader(src io.ReadSeeker, offset, length int64) *SectionReader {
+	return &SectionReader{src, offset, offset, offset + length}
 }
 
-func (this *sectionReader) Read(p []byte) (n int, err error) {
+func (this *SectionReader) Offset() int64 {
+	return this.base
+}
+func (this *SectionReader) Length() int64 {
+	return this.limit - this.base
+}
+func (this *SectionReader) Read(p []byte) (n int, err error) {
 	if this.off >= this.limit {
 		return 0, io.EOF
 	}
@@ -34,7 +40,7 @@ func (this *sectionReader) Read(p []byte) (n int, err error) {
 	this.off += int64(n)
 	return
 }
-func (this *sectionReader) Seek(offset int64, whence int) (n int64, err error) {
+func (this *SectionReader) Seek(offset int64, whence int) (n int64, err error) {
 	switch whence {
 	default:
 		return 0, errWhence
@@ -50,6 +56,6 @@ func (this *sectionReader) Seek(offset int64, whence int) (n int64, err error) {
 	}
 	this.off = offset
 	n, err = this.src.Seek(this.off, 0)
-	n -= this.off
+	n -= this.base
 	return
 }
