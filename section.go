@@ -13,9 +13,11 @@ type (
 )
 
 var errWhence = fmt.Errorf("Seek: invalid whence")
-var errOffset = fmt.Errorf("Seek: invalid offset")
 
 func NewSectionReader(src io.ReadSeeker, offset, length int64) *SectionReader {
+	if sr, ok := src.(*SectionReader); ok {
+		return &SectionReader{sr.src, sr.base + offset, sr.base + offset, sr.base + offset + length}
+	}
 	return &SectionReader{src, offset, offset, offset + length}
 }
 
@@ -52,10 +54,13 @@ func (this *SectionReader) Seek(offset int64, whence int) (n int64, err error) {
 		offset += this.limit
 	}
 	if offset < this.base || offset > this.limit {
-		return 0, errOffset
+		return 0, fmt.Errorf("Seek: invalid offset: %v, for: %v -> %v", offset, this.base, this.limit)
 	}
 	this.off = offset
 	n, err = this.src.Seek(this.off, 0)
-	n -= this.base
+	n = this.off - this.base
 	return
+}
+func (this *SectionReader) String() string {
+	return fmt.Sprintf("{src: %v, base: %v, off: %v, limit: %v}", this.src, this.base, this.off, this.limit)
 }

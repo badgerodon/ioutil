@@ -19,7 +19,7 @@ func TestMultiReadSeeker(t *testing.T) {
 		{1, 0, 1, "bcd"},
 		{6, 0, 6, "ghi"},
 		{0, 0, 0, "abcdefghi"},
-		{-1, 2, 8, "i"},
+		{-2, 2, 7, "hi"},
 	}
 
 	for _, testCase := range testCases {
@@ -51,4 +51,17 @@ func TestMultiReadSeeker(t *testing.T) {
 		}
 	}
 
+}
+
+func TestMultiReadSeekerReusingUnderlying(t *testing.T) {
+	a := strings.NewReader("abc")
+	rdr := NewMultiReadSeeker(a, a)
+	bs := make([]byte, 5)
+	_, err := io.ReadAtLeast(rdr, bs, 5)
+	if err != nil {
+		t.Errorf("Expected no error got %v", err)
+	}
+	if string(bs) != "abcab" {
+		t.Errorf("Expected abcab got %v", string(bs))
+	}
 }

@@ -1,14 +1,13 @@
 package ioutil
 
 import (
-	"errors"
+	"fmt"
 	"io"
 )
 
 type (
-	multiReadSeeker struct {
+	MultiReadSeeker struct {
 		components   []multiReadSeekerComponent
-		idx          int
 		offset, size int64
 		initialized  bool
 	}
@@ -18,44 +17,40 @@ type (
 	}
 )
 
-func (this *multiReadSeeker) Read(p []byte) (int, error) {
+func (this *MultiReadSeeker) Read(p []byte) (int, error) {
 	// initialize
 	err := this.init()
 	if err != nil {
 		return 0, err
 	}
 
-	total := 0
+	for _, component := range this.components {
+		// see where we're at in this component
+		offset := this.offset - component.offset
+		if offset >= component.size {
+			continue
+		}
 
-	for this.idx < len(this.components) {
-		n, err := this.components[this.idx].Read(p)
-		total += n
-		// Ignore EOF errors
-		if err == io.EOF {
+		fmt.Println("   with", component)
+		fmt.Println("seek to", offset)
+		_, err = component.Seek(offset, 0)
+		if err != nil {
+			return 0, err
+		}
+
+		fmt.Println("reading", len(p), "bytes")
+		n, err := component.Read(p)
+		fmt.Println("   read", n, "bytes")
+		this.offset += int64(n)
+		if n > 0 && err == io.EOF {
 			err = nil
 		}
-		if err != nil {
-			return total, err
-		}
-		this.offset += int64(n)
-		this.components[this.idx].offset += int64(n)
-		// Move to the next one if necessary
-		if this.components[this.idx].offset == this.components[this.idx].size {
-			this.idx++
-		}
-		p = p[n:]
-		if len(p) == 0 {
-			return total, nil
-		}
-	}
-
-	if total > 0 {
-		return total, nil
+		return n, err
 	}
 	return 0, io.EOF
 }
 
-func (this *multiReadSeeker) Seek(offset int64, whence int) (ret int64, err error) {
+func (this *MultiReadSeeker) Seek(offset int64, whence int) (ret int64, err error) {
 	// initialize
 	err = this.init()
 	if err != nil {
@@ -69,67 +64,37 @@ func (this *multiReadSeeker) Seek(offset int64, whence int) (ret int64, err erro
 	case 2:
 		offset += this.size
 	default:
-		err = errors.New("Seek: invalid whence")
+		err = fmt.Errorf("Seek: invalid whence")
 		return
 	}
 
 	if offset > this.size || offset < 0 {
-		err = errors.New("Seek: invalid offset")
+		err = fmt.Errorf("Seek: invalid offset")
 		return
 	}
 
-	for offset > this.offset {
-		rel := offset - this.offset
-		if rel > (this.components[this.idx].size - this.components[this.idx].offset) {
-			rel = this.components[this.idx].size - this.components[this.idx].offset
-		}
-		var n int64
-		n, err = this.components[this.idx].Seek(rel, 1)
-		if err != nil {
-			return
-		}
-		rel = n - this.components[this.idx].offset
-		this.offset += rel
-		this.components[this.idx].offset = n
-		if offset > this.offset {
-			this.idx++
-		}
-	}
-
-	for offset < this.offset {
-		if this.idx < len(this.components) {
-			rel := this.components[this.idx].offset - (this.offset - offset)
-			if rel < 0 {
-				rel = 0
-			}
-			_, err = this.components[this.idx].Seek(rel, 0)
-			if err != nil {
-				return
-			}
-			this.offset -= this.components[this.idx].offset - rel
-			this.components[this.idx].offset = rel
-		}
-		if offset < this.offset {
-			this.idx--
-		}
-	}
-
+	this.offset = offset
 	ret = this.offset
 
 	return
 }
 
-func (this *multiReadSeeker) init() error {
+func (this *MultiReadSeeker) Size() (int64, error) {
+	var err error
+	if !this.initialized {
+		err = this.init()
+	}
+	return this.size, err
+}
+
+func (this *MultiReadSeeker) init() error {
 	if !this.initialized {
 		for i, component := range this.components {
 			size, err := component.Seek(0, 2)
 			if err != nil {
 				return err
 			}
-			_, err = component.Seek(0, 0)
-			if err != nil {
-				return err
-			}
+			this.components[i].offset = this.size
 			this.components[i].size = size
 			this.size += size
 		}
@@ -138,12 +103,12 @@ func (this *multiReadSeeker) init() error {
 	return nil
 }
 
-func NewMultiReadSeeker(readSeekers ...io.ReadSeeker) io.ReadSeeker {
+func NewMultiReadSeeker(readSeekers ...io.ReadSeeker) *MultiReadSeeker {
 	components := make([]multiReadSeekerComponent, 0, len(readSeekers))
 	for _, rdr := range readSeekers {
 		components = append(components, multiReadSeekerComponent{rdr, 0, 0})
 	}
-	return &multiReadSeeker{
+	return &MultiReadSeeker{
 		components: components,
 	}
 }
