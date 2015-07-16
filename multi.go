@@ -75,6 +75,20 @@ func (this *MultiReadSeeker) Seek(offset int64, whence int) (ret int64, err erro
 	return
 }
 
+func (this *MultiReadSeeker) Close() error {
+	var err error
+	for _, component := range this.components {
+		if c, ok := component.ReadSeeker.(io.Closer); ok {
+			e := c.Close()
+			if e != nil {
+				err = e
+			}
+		}
+	}
+
+	return err
+}
+
 func (this *MultiReadSeeker) Size() (int64, error) {
 	var err error
 	if !this.initialized {
